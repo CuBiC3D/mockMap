@@ -93,8 +93,7 @@ def main():
     args = check_args()
     location = get_location(args.location)
     loc = (location.latitude, location.longitude)
-    # TODO remove test location
-    loc_target = (location.latitude+0.5, location.longitude)
+    loc_target = (location.latitude, location.longitude)
     speed = args.s
     rate = args.r
     verbose = args.v
