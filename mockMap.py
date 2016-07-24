@@ -26,7 +26,6 @@ loc_target = None
 speed = None
 rate = None
 # TODO replace with args
-verbose = None
 last_update = None
 telnet = []
 
@@ -41,7 +40,7 @@ def check_args():
     return args
 
 def log(message, log_type):
-    if log_type == '*' and not verbose:
+    if log_type == '*' and not args.v:
         pass
     else:
         print('[' + log_type + '] ' + message)
@@ -87,10 +86,10 @@ def renew_position():
         except (ConnectionRefusedError, BrokenPipeError, IOError):
             log('Connection lost to {ip} reconnecting...'.format(ip=args.ip[i]), '-')
             connection.close()
-            # TODO port & timeout configurable
+
             while True:
                 try:
-                    connection.open(str(args.ip[i]), 5554, 5)
+                    connection.open(str(args.ip[i]), config.getint('telnet', 'port'), config.getint('telnet', 'timeout'))
                 except IOError:
                     pass
                 else:
@@ -125,12 +124,10 @@ def main():
     loc_target = (location.latitude, location.longitude)
     speed = args.s
     rate = args.r
-    verbose = args.v
 
-    # TODO make port configurable and timeout
     for host in args.ip:
         try:
-            telnet.append(telnetlib.Telnet(str(host), 5554, 5))
+            telnet.append(telnetlib.Telnet(str(host), config.getint('telnet', 'port'), config.getint('telnet', 'timeout')))
         except timeout:
             log('Could not connect to telnet on {ip} - timed out (wrong IP?)'.format(ip=host), '-')
             sys.exit(1)
@@ -148,7 +145,6 @@ def main():
     # initial call to start thread
     renew_position()
 
-# TODO read port and host from config
 if __name__ == '__main__':
     main()
-    app.run(host='0.0.0.0')
+    app.run(host=config['server']['host'], port=config.getint('server', 'port'))
