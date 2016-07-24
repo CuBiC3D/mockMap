@@ -25,7 +25,6 @@ loc = None
 loc_target = None
 speed = None
 rate = None
-# TODO replace with args
 last_update = None
 telnet = []
 
