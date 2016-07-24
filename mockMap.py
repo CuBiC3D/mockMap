@@ -6,7 +6,6 @@ import configparser
 import telnetlib
 import ipaddress
 import sys
-# TODO let app use logging module
 import logging
 from socket import timeout
 from timeit import default_timer
@@ -14,6 +13,10 @@ from datetime import datetime
 from geopy.geocoders import Nominatim
 from geographiclib.geodesic import Geodesic
 from flask import Flask, render_template, request, jsonify
+
+logging.basicConfig(format='[%(levelname)s] %(asctime)s - %(message)s',)
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 # use config file for credentials and setup
 config = configparser.ConfigParser()
@@ -38,7 +41,7 @@ def check_args():
     args = parser.parse_args()
     return args
 
-def log(message, log_type):
+def logger(message, log_type):
     if log_type == '*' and not args.v:
         pass
     else:
@@ -56,8 +59,7 @@ def renew_position():
     global loc, speed, last_update
     geod = Geodesic.WGS84
     path = geod.InverseLine(loc[0], loc[1], loc_target[0], loc_target[1])
-    log('Thread started at {time}, distance to move is {distance:0.3f}m'
-            .format(time=datetime.now(), distance=path.s13), '*')
+    log.debug('Thread started at %s, distance to move is %0.3fm', datetime.now(), path.s13)
 
     # set last_update for first run assuming optimal
     if last_update is None:
@@ -72,18 +74,17 @@ def renew_position():
         loc_new = path.Position(move, Geodesic.STANDARD | Geodesic.LONG_UNROLL)
         loc = (loc_new['lat2'], loc_new['lon2'])
 
-        log('Moved {:.3f}m to {:.5f}, {:.5f}'
-                .format(loc_new['s12'], loc_new['lat2'], loc_new['lon2']), '*')
+        log.debug('Moved %.3fm to %.5f, %.5f', loc_new['s12'], loc_new['lat2'], loc_new['lon2'])
     else:
-        log('No movement', '*')
+        log.debug('No movement')
 
     # send position to telnet hosts
     for i, connection in enumerate(telnet):
         try:
             connection.write('geo fix {longitude} {latitude}\n'.format(longitude=loc[1], latitude=loc[0]).encode('ascii'))
-            log('Position sent to {ip}'.format(ip=args.ip[i]), '*')
+            log.debug('Position sent to %s', args.ip[i])
         except (ConnectionRefusedError, BrokenPipeError, IOError):
-            log('Connection lost to {ip} reconnecting...'.format(ip=args.ip[i]), '-')
+            log.warning('Connection lost to %s reconnecting...', args.ip[i])
             connection.close()
 
             while True:
@@ -92,6 +93,7 @@ def renew_position():
                 except IOError:
                     pass
                 else:
+                    log.info('Reconnected to %s', args.ip[i])
                     break
 
     threading.Timer(rate, renew_position).start()
@@ -107,14 +109,11 @@ def http_location():
         return jsonify(latitude=loc[0], longitude=loc[1])
     if request.method == 'POST':
         loc_target = (float(request.form['latitude']), float(request.form['longitude']))
-        log('New target set to ({latitude}, {longitude})'
-                .format(latitude=request.form['latitude'], longitude=request.form['longitude']), '+')
+        log.debug('New target set to (%s, %s)', request.form['latitude'], request.form['longitude'])
         return 'ok'
 
 def main():
     global args, loc, loc_target, speed, rate, verbose, telnet
-
-    logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
     # set globals
     args = check_args()
@@ -128,18 +127,18 @@ def main():
         try:
             telnet.append(telnetlib.Telnet(str(host), config.getint('telnet', 'port'), config.getint('telnet', 'timeout')))
         except timeout:
-            log('Could not connect to telnet on {ip} - timed out (wrong IP?)'.format(ip=host), '-')
+            log.critical('Could not connect to telnet on %s - timed out (wrong IP?)', host)
             sys.exit(1)
         except ConnectionRefusedError:
-            log('Connection to {ip} was refused. Is telnet running and port open?'.format(ip=host), '-')
+            log.critical('Connection to %s was refused. Is telnet running and port open?', host)
             sys.exit(1)
         else:
-            log('Connected to telnet on {ip}'.format(ip=host), '+')
+            log.info('Connected to telnet on %s', host)
 
-    log('Using location: {location}'.format(location=location.address), '+')
-    log('Initial latitude: {latitude:.5f}'.format(latitude=location.latitude), '*')
-    log('Initial longitude: {longitude:.5f}'.format(longitude=location.longitude), '*')
-    log('Initial speed: {speed:.1f}km/h and update rate: {rate}s'.format(speed=args.s, rate=args.r), '*')
+    log.info('Using location: %s', location.address)
+    log.debug('Initial latitude: %.6f', location.latitude)
+    log.debug('Initial longitude: %.6f', location.longitude)
+    log.debug('Initial speed: %.2fkm/h and update rate: %.1fs', args.s, args.r)
 
     # initial call to start thread
     renew_position()
