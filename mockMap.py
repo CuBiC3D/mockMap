@@ -3,6 +3,12 @@
 import argparse
 import threading
 import configparser
+import telnetlib
+import ipaddress
+import sys
+# TODO let app use logging module
+import logging
+from socket import timeout
 from timeit import default_timer
 from datetime import datetime
 from geopy.geocoders import Nominatim
@@ -12,18 +18,22 @@ from flask import Flask, render_template, request, jsonify
 # use config file for credentials and setup
 config = configparser.ConfigParser()
 config.read('config.conf')
+args = None
 
 app = Flask(__name__)
 loc = None
 loc_target = None
 speed = None
 rate = None
+# TODO replace with args
 verbose = None
 last_update = None
+telnet = []
 
 def check_args():
     parser = argparse.ArgumentParser(description='Movement simulator for mocking locations.')
     parser.add_argument('location', help='a Google Maps readable location')
+    parser.add_argument('ip', nargs='+', type=ipaddress.ip_address, help='IP addresses for telnet connection')
     parser.add_argument('-s', metavar='speed', type=float, default=10, help='initial movement speed')
     parser.add_argument('-r', metavar='rate', type=int, default=1, help='GPS refresh rate in seconds')
     parser.add_argument('-v', action='store_true', help='verbose messages')
@@ -69,6 +79,23 @@ def renew_position():
     else:
         log('No movement', '*')
 
+    # send position to telnet hosts
+    for i, connection in enumerate(telnet):
+        try:
+            connection.write('geo fix {longitude} {latitude}\n'.format(longitude=loc[1], latitude=loc[0]).encode('ascii'))
+            log('Position sent to {ip}'.format(ip=args.ip[i]), '*')
+        except (ConnectionRefusedError, BrokenPipeError, IOError):
+            log('Connection lost to {ip} reconnecting...'.format(ip=args.ip[i]), '-')
+            connection.close()
+            # TODO port & timeout configurable
+            while True:
+                try:
+                    connection.open(str(args.ip[i]), 5554, 5)
+                except IOError:
+                    pass
+                else:
+                    break
+
     threading.Timer(rate, renew_position).start()
 
 @app.route('/')
@@ -82,12 +109,14 @@ def http_location():
         return jsonify(latitude=loc[0], longitude=loc[1])
     if request.method == 'POST':
         loc_target = (float(request.form['latitude']), float(request.form['longitude']))
-        log('New target set to ({latitude},{longitude})'
+        log('New target set to ({latitude}, {longitude})'
                 .format(latitude=request.form['latitude'], longitude=request.form['longitude']), '+')
         return 'ok'
 
 def main():
-    global loc, loc_target, speed, rate, verbose
+    global args, loc, loc_target, speed, rate, verbose, telnet
+
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
     # set globals
     args = check_args()
@@ -98,6 +127,19 @@ def main():
     rate = args.r
     verbose = args.v
 
+    # TODO make port configurable and timeout
+    for host in args.ip:
+        try:
+            telnet.append(telnetlib.Telnet(str(host), 5554, 5))
+        except timeout:
+            log('Could not connect to telnet on {ip} - timed out (wrong IP?)'.format(ip=host), '-')
+            sys.exit(1)
+        except ConnectionRefusedError:
+            log('Connection to {ip} was refused. Is telnet running and port open?'.format(ip=host), '-')
+            sys.exit(1)
+        else:
+            log('Connected to telnet on {ip}'.format(ip=host), '+')
+
     log('Using location: {location}'.format(location=location.address), '+')
     log('Initial latitude: {latitude:.5f}'.format(latitude=location.latitude), '*')
     log('Initial longitude: {longitude:.5f}'.format(longitude=location.longitude), '*')
@@ -106,6 +148,7 @@ def main():
     # initial call to start thread
     renew_position()
 
+# TODO read port and host from config
 if __name__ == '__main__':
     main()
     app.run(host='0.0.0.0')
