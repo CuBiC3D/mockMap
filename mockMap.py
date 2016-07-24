@@ -41,12 +41,6 @@ def check_args():
     args = parser.parse_args()
     return args
 
-def logger(message, log_type):
-    if log_type == '*' and not args.v:
-        pass
-    else:
-        print('[' + log_type + '] ' + message)
-
 def get_location(loc):
     geolocator = Nominatim()
     location = geolocator.geocode(loc)
