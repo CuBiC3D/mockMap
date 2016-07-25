@@ -77,14 +77,14 @@ def renew_position():
         try:
             connection.write('geo fix {longitude} {latitude}\n'.format(longitude=loc[1], latitude=loc[0]).encode('ascii'))
             log.debug('Position sent to %s', args.ip[i])
-        except (ConnectionRefusedError, BrokenPipeError, IOError):
+        except(ConnectionRefusedError, BrokenPipeError, IOError, OSError):
             log.warning('Connection lost to %s reconnecting...', args.ip[i])
             connection.close()
 
             while True:
                 try:
                     connection.open(str(args.ip[i]), config.getint('telnet', 'port'), config.getint('telnet', 'timeout'))
-                except IOError:
+                except(IOError, OSError):
                     pass
                 else:
                     log.info('Reconnected to %s', args.ip[i])
@@ -123,6 +123,9 @@ def main():
             telnet.append(telnetlib.Telnet(str(host), config.getint('telnet', 'port'), config.getint('telnet', 'timeout')))
         except timeout:
             log.critical('Could not connect to telnet on %s - timed out (wrong IP?)', host)
+            sys.exit(1)
+        except OSError:
+            log.critical('Could not connect to telnet on %s - (wrong IP?)', host)
             sys.exit(1)
         except ConnectionRefusedError:
             log.critical('Connection to %s was refused. Is telnet running and port open?', host)
