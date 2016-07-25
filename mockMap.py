@@ -88,6 +88,7 @@ def renew_position():
                     pass
                 else:
                     log.info('Reconnected to %s', args.ip[i])
+                    last_update = default_timer()
                     break
 
     threading.Timer(rate, renew_position).start()
